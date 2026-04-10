@@ -58,14 +58,17 @@
         // ==========================================
         // 1. ตั้งค่า URL ของ Hub (สำคัญ: ต้องเปลี่ยนให้ตรงกับ Backend ของคุณ)
         // ==========================================
-        const hubUrl = "http://localhost:32772/chatHub"; // เปลี่ยนเป็น URL และ Route ของคุณ เช่น https://localhost:32772/chatHub
+        const hubUrl = "http://localhost:32768/chatHub"; // เปลี่ยนเป็น URL และ Route ของคุณ เช่น https://localhost:32772/chatHub
 
         const statusDiv = document.getElementById("connection-status");
         const containerDiv = document.getElementById("notifications-container");
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJfaFRPTHV1bk1QS29SYjlUV3NMUGV3IiwiaWF0IjoxNzc1Nzk5NTI4LCJuYmYiOjE3NzU3OTk1MjgsImV4cCI6MTc3NTgwNjcyOCwicm9sZSI6Ik93bmVyIiwiaXNzIjoic2VtbHMtYXBwLWdyb3VwIiwiYXVkIjoic2VtbHMtYXBwLWF1ZGllbmNlIn0.SCBDYuBHPy4sOpy84GZfLHFEbjaVVEllDTOx1mT6Nbg";
 
         // 2. สร้าง Connection
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl(hubUrl)
+            .withUrl(hubUrl, {
+                accessTokenFactory: () => token // ใช้ JWT Token สำหรับ Authentication
+            })
             .withAutomaticReconnect() // พยายามเชื่อมต่อใหม่หากหลุด
             .build();
 
@@ -87,14 +90,14 @@
 
             // ใส่เนื้อหาลงใน Card
             card.innerHTML = `
-                <h4>User: ${data.username || 'Unknown'}</h4>
-                <p><strong>FaceId:</strong> ${data.faceId}</p>
-                <p><strong>Score:</strong> ${data.score}</p>
-                <p><strong>Message:</strong> ${data.message}</p>
-                <p><strong>Recommended Menu:</strong> ${menuHtml}</p>
-                <hr style="border:0; border-top:1px solid #eee;">
-                <small style="color:gray;">Received at: ${new Date().toLocaleTimeString()}</small>
-            `;
+                    <h4>User: ${data.username || 'Unknown'}</h4>
+                    <p><strong>FaceId:</strong> ${data.faceId}</p>
+                    <p><strong>Score:</strong> ${data.score}</p>
+                    <p><strong>Message:</strong> ${data.message}</p>
+                    <p><strong>Recommended Menu:</strong> ${menuHtml}</p>
+                    <hr style="border:0; border-top:1px solid #eee;">
+                    <small style="color:gray;">Received at: ${new Date().toLocaleTimeString()}</small>
+                `;
 
             // นำ Card ใหม่ไปแทรกไว้บนสุด
             containerDiv.prepend(card);

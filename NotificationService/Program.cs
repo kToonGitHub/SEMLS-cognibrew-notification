@@ -74,6 +74,25 @@ namespace NotificationService
                 ValidAudience = audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key))
             };
+
+            // --- เพิ่มส่วนนี้สำหรับการทำงานของ SignalR ---
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    // ดึง token จาก query string ชื่อ "access_token"
+                    var accessToken = context.Request.Query["access_token"];
+
+                    // ตรวจสอบว่า request นี้ส่งมาที่ path ของ SignalR Hub หรือไม่
+                    var path = context.HttpContext.Request.Path;
+                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
+                    {
+                        // นำ token ไปใส่ใน context เพื่อให้ระบบ Validate ต่อไป
+                        context.Token = accessToken;
+                    }
+                    return Task.CompletedTask;
+                }
+            };
         }
 
         private static void SetSwaggerOptions(SwaggerGenOptions options)
