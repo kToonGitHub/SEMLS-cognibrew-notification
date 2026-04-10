@@ -41,6 +41,7 @@ namespace NotificationService.Controllers
                 Username = "Tester One",
                 Score = 0.98f
             };
+            mockFaceResult.Embedding.AddRange(new float[] { 0, 0.2f, 0.1f, 0.7f, 0.02f }); // เพิ่มข้อมูล Embedding
 
             var faceBody = mockFaceResult.ToByteArray();
             string faceExchange = _config["RabbitMQ:FaceResultExchange"] ?? "cognibrew.inference";
