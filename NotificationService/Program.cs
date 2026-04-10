@@ -1,5 +1,6 @@
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
 using NotificationService.Models;
@@ -22,14 +23,30 @@ namespace NotificationService
             builder.Services
                 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options => SetJwtOptions(options, builder));
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy("AllowAll", builder =>
+                {
+                    builder.SetIsOriginAllowed(_ => true) // ยอมรับทุก Origin (สำหรับการเทส)
+                           .AllowAnyMethod()
+                           .AllowAnyHeader()
+                           .AllowCredentials(); // SignalR จำเป็นต้องใช้ Credentials
+                });
+            });
+            builder.Services.AddSignalR();
+            builder.Services.AddSingleton<NotificationService.SignalR.NotificationService>();
 
             // ตั้งค่า MongoDB
             var mongoClient = new MongoClient(builder.Configuration.GetConnectionString("MongoDb"));
             var database = mongoClient.GetDatabase("CognibrewDb");
             var feedbackCollection = database.GetCollection<NotificationDocument>("Notification");
 
+            builder.Services.AddSingleton(feedbackCollection);
+            builder.Services.AddHostedService<Services.Notifier>();
+
             var app = builder.Build();
 
+            app.UseCors("AllowAll");
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
@@ -40,6 +57,7 @@ namespace NotificationService
             //app.UseHttpsRedirection();
             app.UseAuthorization();
             app.MapControllers();
+            app.MapHub<NotificationService.SignalR.ChatHub>("/chatHub");
             app.Run();
         }
 

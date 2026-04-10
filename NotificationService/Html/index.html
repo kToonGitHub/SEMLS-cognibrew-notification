@@ -1,0 +1,140 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignalR Notification Tester</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 20px;
+        }
+
+        #connection-status {
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            color: white;
+            background-color: orange; /* กำลังเชื่อมต่อ */
+        }
+
+        .notification-card {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+            .notification-card h4 {
+                margin-top: 0;
+                color: #333;
+            }
+
+        .tag {
+            display: inline-block;
+            background-color: #007bff;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>SignalR Notification Tester</h2>
+    <div id="connection-status">Connecting to Hub...</div>
+
+    <div id="notifications-container">
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. ตั้งค่า URL ของ Hub (สำคัญ: ต้องเปลี่ยนให้ตรงกับ Backend ของคุณ)
+        // ==========================================
+        const hubUrl = "http://localhost:32772/chatHub"; // เปลี่ยนเป็น URL และ Route ของคุณ เช่น https://localhost:32772/chatHub
+
+        const statusDiv = document.getElementById("connection-status");
+        const containerDiv = document.getElementById("notifications-container");
+
+        // 2. สร้าง Connection
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl(hubUrl)
+            .withAutomaticReconnect() // พยายามเชื่อมต่อใหม่หากหลุด
+            .build();
+
+        // 3. ดักจับ Event "Notify" จาก Backend
+        connection.on("Notify", (data) => {
+            console.log("Received Notification: ", data);
+
+            // สร้าง Card เพื่อแสดงข้อมูล
+            const card = document.createElement("div");
+            card.className = "notification-card";
+
+            // จัดการ RecommendedMenu ให้กลายเป็น Label
+            let menuHtml = "";
+            if (data.recommendedMenu && data.recommendedMenu.length > 0) {
+                menuHtml = data.recommendedMenu.map(menu => `<span class="tag">${menu}</span>`).join("");
+            } else {
+                menuHtml = "<em>ไม่มีเมนูแนะนำ</em>";
+            }
+
+            // ใส่เนื้อหาลงใน Card
+            card.innerHTML = `
+                <h4>User: ${data.username || 'Unknown'}</h4>
+                <p><strong>FaceId:</strong> ${data.faceId}</p>
+                <p><strong>Score:</strong> ${data.score}</p>
+                <p><strong>Message:</strong> ${data.message}</p>
+                <p><strong>Recommended Menu:</strong> ${menuHtml}</p>
+                <hr style="border:0; border-top:1px solid #eee;">
+                <small style="color:gray;">Received at: ${new Date().toLocaleTimeString()}</small>
+            `;
+
+            // นำ Card ใหม่ไปแทรกไว้บนสุด
+            containerDiv.prepend(card);
+        });
+
+        // 4. เริ่มการเชื่อมต่อ
+        async function startConnection() {
+            try {
+                await connection.start();
+                statusDiv.innerText = "Connected to Hub Successfully!";
+                statusDiv.style.backgroundColor = "green";
+                console.log("SignalR Connected.");
+            } catch (err) {
+                console.error("Error connecting to SignalR: ", err);
+                statusDiv.innerText = "Failed to connect. See console for details.";
+                statusDiv.style.backgroundColor = "red";
+
+                // ลองเชื่อมต่อใหม่ในอีก 5 วินาที
+                setTimeout(startConnection, 5000);
+            }
+        }
+
+        // แจ้งเตือนกรณีสถานะ Connection เปลี่ยนแปลง (Reconnect)
+        connection.onreconnecting(error => {
+            statusDiv.innerText = "Connection lost. Reconnecting...";
+            statusDiv.style.backgroundColor = "orange";
+        });
+
+        connection.onreconnected(connectionId => {
+            statusDiv.innerText = "Reconnected Successfully!";
+            statusDiv.style.backgroundColor = "green";
+        });
+
+        connection.onclose(error => {
+            statusDiv.innerText = "Connection Closed.";
+            statusDiv.style.backgroundColor = "red";
+        });
+
+        // เริ่มรัน
+        startConnection();
+    </script>
+</body>
+</html>
