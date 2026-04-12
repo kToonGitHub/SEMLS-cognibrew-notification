@@ -5,12 +5,16 @@ using MongoDB.Driver;
 using NotificationService.Models;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 
 namespace NotificationService.Services
 {
     public class Notifier : BackgroundService
     {
+        // ใช้จัดคิวการทำงานไม่ให้ FaceId เดียวกันถูก Process พร้อมกัน
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
+
         private readonly IMongoCollection<NotificationDocument> _collection;
         private readonly IConfiguration _config;
         private readonly ILogger<Notifier> _logger;
@@ -62,9 +66,40 @@ namespace NotificationService.Services
                     try
                     {
                         var body = ea.Body.ToArray();
-                        FaceResult faceResult = await ProcessFaceResultMessageAsync(body); // ทำ Logic ของ Face Result
-                        await _channelFaceResult.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
-                        await ReadAndNotify(faceResult.FaceId); // อ่านข้อมูลจาก MongoDB และส่ง Notification ผ่าน SignalR
+                        FaceResult faceResult;
+                        try
+                        {
+                            // 1. Parse ข้อมูลออกมาก่อน เพื่อเอา FaceId
+                            faceResult = FaceResult.Parser.ParseFrom(body);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error parsing Face Result message.");
+                            await _channelFaceResult.BasicNackAsync(ea.DeliveryTag, false, false);
+                            return;
+                        }
+                        // 2. สร้างหรือดึง Lock สำหรับ FaceId นี้
+                        var faceLock = _locks.GetOrAdd(faceResult.FaceId, _ => new SemaphoreSlim(1, 1));
+
+                        // 3. รอคิว (ถ้ามี Consumer อื่นกำลัง Save/Notify FaceId นี้อยู่ มันจะรอจนกว่าฝั่งนั้นจะเสร็จ)
+                        await faceLock.WaitAsync();
+                        try
+                        {
+                            // 4. ทำ Logic เดิม
+                            await SaveToMongoAsync(faceResult);
+                            await _channelFaceResult.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
+                            await ReadAndNotify(faceResult.FaceId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error processing Face Result data.");
+                            await _channelFaceResult.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
+                        }
+                        finally
+                        {
+                            // 5. ปล่อย Lock เพื่อให้ Consumer ตัวต่อไปทำงานต่อได้
+                            faceLock.Release();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -84,9 +119,38 @@ namespace NotificationService.Services
                     try
                     {
                         var body = ea.Body.ToArray();
-                        Recommendation recommendation = await ProcessRecommendedMenuMessageAsync(body); // ทำ Logic ของ Menu
-                        await _channelRecommendedMenu.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
-                        await ReadAndNotify(recommendation.FaceId); // อ่านข้อมูลจาก MongoDB และส่ง Notification ผ่าน SignalR
+                        Recommendation recommendation; // เปลี่ยนเป็น Recommendation
+                        try
+                        {
+                            // 1. Parse ข้อมูลให้ตรงกับ Type
+                            recommendation = Recommendation.Parser.ParseFrom(body);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error parsing Recommended Menu message.");
+                            await _channelRecommendedMenu.BasicNackAsync(ea.DeliveryTag, false, false);
+                            return;
+                        }
+
+                        var faceLock = _locks.GetOrAdd(recommendation.FaceId, _ => new SemaphoreSlim(1, 1));
+                        await faceLock.WaitAsync();
+                        try
+                        {
+                            // 4. เอา Object ไป Save เลย ไม่ต้องไปเรียก Process...Async ให้ parse ซ้ำแล้ว
+                            await SaveToMongoAsync(recommendation);
+
+                            await _channelRecommendedMenu.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
+                            await ReadAndNotify(recommendation.FaceId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error processing Recommended Menu data.");
+                            await _channelRecommendedMenu.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
+                        }
+                        finally
+                        {
+                            faceLock.Release();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -106,9 +170,38 @@ namespace NotificationService.Services
                     try
                     {
                         var body = ea.Body.ToArray();
-                        MemberInfo memberInfo = await ProcessMemberInfoMessageAsync(body); // ทำ Logic ของ Member Info
-                        await _channelMemberInfo.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
-                        await ReadAndNotify(memberInfo.FaceId); // อ่านข้อมูลจาก MongoDB และส่ง Notification ผ่าน SignalR
+                        MemberInfo memberInfo; // เปลี่ยนเป็น MemberInfo
+                        try
+                        {
+                            // 1. Parse ข้อมูลให้ตรงกับ Type
+                            memberInfo = MemberInfo.Parser.ParseFrom(body);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error parsing Member Info message.");
+                            await _channelMemberInfo.BasicNackAsync(ea.DeliveryTag, false, false);
+                            return;
+                        }
+
+                        var faceLock = _locks.GetOrAdd(memberInfo.FaceId, _ => new SemaphoreSlim(1, 1));
+                        await faceLock.WaitAsync();
+                        try
+                        {
+                            // 4. เอา Object ไป Save เลย ไม่ต้อง Parse ซ้ำ
+                            await SaveToMongoAsync(memberInfo);
+
+                            await _channelMemberInfo.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
+                            await ReadAndNotify(memberInfo.FaceId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error processing Member Info data.");
+                            await _channelMemberInfo.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
+                        }
+                        finally
+                        {
+                            faceLock.Release();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -359,30 +452,6 @@ namespace NotificationService.Services
             return queueName;
         }
         #endregion Connect to RabbitMQ
-
-
-        #region ProcessMessageAsync
-        public async Task<Recommendation> ProcessRecommendedMenuMessageAsync(byte[] body)
-        {
-            Recommendation recommendationResult = Recommendation.Parser.ParseFrom(body);
-            await SaveToMongoAsync(recommendationResult);
-            return recommendationResult;
-        }
-
-        public async Task<FaceResult> ProcessFaceResultMessageAsync(byte[] body)
-        {
-            FaceResult faceResult = FaceResult.Parser.ParseFrom(body);
-            await SaveToMongoAsync(faceResult);
-            return faceResult;
-        }
-
-        public async Task<MemberInfo> ProcessMemberInfoMessageAsync(byte[] body)
-        {
-            MemberInfo memberInfo = MemberInfo.Parser.ParseFrom(body);
-            await SaveToMongoAsync(memberInfo);
-            return memberInfo;
-        }
-        #endregion ProcessMessageAsync
 
 
         #region SaveToMongoAsync

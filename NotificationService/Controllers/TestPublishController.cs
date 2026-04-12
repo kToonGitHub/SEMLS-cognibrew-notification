@@ -69,13 +69,27 @@ namespace NotificationService.Controllers
             // ==========================================
             if (mock_recommendation)
             {
+                // แยกหมวดหมู่เครื่องดื่ม (รวม Hot, Iced, Frappe และ Seasonal ที่เป็นน้ำ)
+                string[] drinks = {
+                    "Latte", "Cappuccino", "Flat White", "Cortado", "Americano",
+                    "Iced Latte", "Cold Brew", "Iced Matcha",
+                    "Mocha Frappe", "Caramel Frappe", "Peppermint Mocha"
+                };
+                // แยกหมวดหมู่ขนม (Pastries และ Seasonal ที่เป็นขนม)
+                string[] snacks = {
+                    "Croissant", "Blueberry Muffin", "Pumpkin Bread"
+                };
+                var random = new Random();
+                string randomDrink = drinks[random.Next(drinks.Length)];
+                string randomSnack = snacks[random.Next(snacks.Length)];
+
                 var mockRecommendation = new Recommendation
                 {
                     FaceId = faceIdMock,
                     Username = username // แทนที่ Hardcode ด้วยตัวแปร username
                 };
-                mockRecommendation.RecommendedMenu.Add("Iced Americano");
-                mockRecommendation.RecommendedMenu.Add("Matcha Latte");
+                mockRecommendation.RecommendedMenu.Add(randomDrink);
+                mockRecommendation.RecommendedMenu.Add(randomSnack);
 
                 var menuBody = mockRecommendation.ToByteArray();
                 string menuExchange = _config["RabbitMQ:RecommendationExchange"] ?? "cognibrew.recommendation";

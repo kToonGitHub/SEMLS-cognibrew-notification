@@ -1,13 +1,14 @@
 services:
   notification-service:
+    platform: linux/amd64
     build:
       context: . # ให้ Docker มองโฟลเดอร์นอกสุดเป็นจุดเริ่มต้น
       dockerfile: notificationService/Dockerfile # ชี้เป้าไปที่ไฟล์ Dockerfile ในโฟลเดอร์ย่อย
     container_name: notification-service
     restart: unless-stopped
     ports:
-      - "5000:8080" # ผูกพอร์ต 5000 ของเครื่องโฮสต์ เข้ากับพอร์ต 8080 ของ .NET
-      - "5001:8081"
+      - "5010:8080" # ผูกพอร์ต 5000 ของเครื่องโฮสต์ เข้ากับพอร์ต 8080 ของ .NET
+      - "5020:8081"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       
@@ -23,7 +24,7 @@ services:
       - RabbitMQ__RecommendationQueue=cognibrew.recommendation.notification_service
       - RabbitMQ__RecommendationExchange=cognibrew.recommendation
       - RabbitMQ__RecommendationRoutingKey=menu.recommended
-      - RabbitMQ__FaceResultQueue=cognibrew.inference.face_embeded.feedback_service
+      - RabbitMQ__FaceResultQueue=cognibrew.inference.face_embeded.notification_service
       - RabbitMQ__FaceResultExchange=cognibrew.inference
       - RabbitMQ__FaceResultRoutingKey=face.recognized
       - RabbitMQ__MemberQueue=cognibrew.member.notification_service
