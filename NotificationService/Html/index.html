@@ -102,12 +102,11 @@
         // 1. ตั้งค่า URL ของ Hub
         // ==========================================
         const hubUrl = "http://localhost:5000/chatHub";
-
         const statusDiv = document.getElementById("connection-status");
         const containerDiv = document.getElementById("notifications-container");
-        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJOb0prUy1VT0t2S2Q0V25ndGx1OWpBIiwiaWF0IjoxNzc1OTgyNzUzLCJuYmYiOjE3NzU5ODI3NTMsImV4cCI6MTc3NTk4OTk1Mywicm9sZSI6Ik93bmVyIiwiaXNzIjoic2VtbHMtYXBwLWdyb3VwIiwiYXVkIjoic2VtbHMtYXBwLWF1ZGllbmNlIn0.ymRleA4b6UevlsAd3Ec5mF75OD8Wk9VG7-N7c6NiUoU";
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJXQ0lVNGhqZDZ3MkZmbWZVZ2tsTXFBIiwiaWF0IjoxNzc1OTkwMjc4LCJuYmYiOjE3NzU5OTAyNzgsImV4cCI6MTc3NTk5NzQ3OCwicm9sZSI6Ik93bmVyIiwiaXNzIjoic2VtbHMtYXBwLWdyb3VwIiwiYXVkIjoic2VtbHMtYXBwLWF1ZGllbmNlIn0.8qJ4ZamVKitOGZ7ySTmzEnyeojTZaIndMcFBG0imqoY"; // ใส่ Token ของคุณ
 
-        // 2. สร้าง Connection
+        // สร้าง Connection
         const connection = new signalR.HubConnectionBuilder()
             .withUrl(hubUrl, {
                 accessTokenFactory: () => token
@@ -115,22 +114,55 @@
             .withAutomaticReconnect()
             .build();
 
-        // 3. ดักจับ Event "Notify" จาก Backend
+        // ==========================================
+        // ส่วนเสริม: ตัวแปรและฟังก์ชันสำหรับเช็คความครบถ้วนของข้อมูล
+        // ==========================================
+
+        // เก็บ "คะแนน/น้ำหนักข้อมูล" ของแต่ละ FaceId
+        const customerDataStore = {};
+
+        // ฟังก์ชันคำนวณความครบถ้วนของข้อมูล (นับฟิลด์ที่มีค่าจริง)
+        function calculateDataWeight(data) {
+            let weight = 0;
+            for (const key in data) {
+                // ถือว่าถ้าไม่เป็น null, ไม่เป็น undefined และไม่ใช่ข้อความว่าง คือมีข้อมูล
+                if (data[key] !== null && data[key] !== undefined && data[key] !== "") {
+                    // คุณสามารถให้คะแนนพิเศษกับฟิลด์สำคัญได้ เช่น 
+                    // if (key === "firstName" || key === "rank") weight += 5; else weight++;
+                    weight++;
+                }
+            }
+            return weight;
+        }
+
+        // ==========================================
+        // ดักจับ Event "Notify" จาก Backend
+        // ==========================================
         connection.on("Notify", (payload) => {
             console.log("Received Notification: ", payload);
 
-            // ดึง object customer ออกมาจาก payload
             const data = payload.customer;
-            if (!data) {
-                console.warn("Payload does not contain 'customer' object.");
+            if (!data || !data.id) {
+                console.warn("Payload is missing or does not contain an ID.");
                 return;
             }
 
-            // สร้าง Card เพื่อแสดงข้อมูล
-            const card = document.createElement("div");
-            card.className = "notification-card";
+            // 1. คำนวณและเปรียบเทียบน้ำหนักข้อมูล
+            const newDataWeight = calculateDataWeight(data);
+            const existingDataWeight = customerDataStore[data.id] || 0;
 
-            // จัดการ Tags (สถานะ Guest, Recommendation Down)
+            // 2. ถ้าข้อมูลใหม่ "น้อยกว่า" ของเดิม ให้หยุดการทำงาน (ไม่อัปเดต)
+            if (newDataWeight < existingDataWeight) {
+                console.log(`[Skip] ID: ${data.id} - ข้อมูลใหม่ (${newDataWeight}) น้อยกว่าข้อมูลที่มีอยู่ (${existingDataWeight})`);
+                return;
+            }
+
+            // 3. ถ้าข้อมูลใหม่มีมากกว่าหรือเท่ากับของเดิม ให้อัปเดตข้อมูลในระบบ
+            customerDataStore[data.id] = newDataWeight;
+
+            // ==========================================
+            // เตรียม HTML สำหรับ Card
+            // ==========================================
             const isGuestTag = data.isGuest
                 ? `<span class="tag guest">Guest</span>`
                 : `<span class="tag member">Member</span>`;
@@ -139,19 +171,16 @@
                 ? `<span class="tag warning">Rec Service Down</span>`
                 : ``;
 
-            // จัดการรูปภาพ (ถ้าระบบส่งเป็น base64 มาให้)
             const imageHtml = data.image
                 ? `<img class="customer-image" src="data:image/jpeg;base64,${data.image}" alt="Customer Image">`
                 : ``;
 
-            // ตกแต่งส่วน Greeting
             const greetingHtml = data.greeting
                 ? `<div class="greeting-text">💬 "${data.greeting}"</div>`
                 : ``;
 
-            // ใส่เนื้อหาลงใน Card
-            card.innerHTML = `
-                    <h4>ID (FaceId): ${data.id || 'N/A'}</h4>
+            const cardInnerHtml = `
+                    <h4>ID (FaceId): ${data.id}</h4>
                     ${imageHtml}
                     ${greetingHtml}
 
@@ -176,11 +205,34 @@
                     </div>
 
                     <hr style="border:0; border-top:1px solid #eee; margin-top: 15px;">
-                    <small style="color:gray;">Received at: ${new Date().toLocaleTimeString()}</small>
+                    <small style="color:gray;">Data Weight: ${newDataWeight} | Updated at: ${new Date().toLocaleTimeString()}</small>
                 `;
 
-            // นำ Card ใหม่ไปแทรกไว้บนสุด
-            containerDiv.prepend(card);
+            // ==========================================
+            // จัดการ DOM (อัปเดต Card เดิม หรือ สร้างใหม่)
+            // ==========================================
+            const cardElementId = `card-${data.id}`;
+            const existingCard = document.getElementById(cardElementId);
+
+            if (existingCard) {
+                // มีการ์ดอยู่แล้ว -> อัปเดตข้อมูล
+                existingCard.innerHTML = cardInnerHtml;
+
+                // Effect กระพริบสีเพื่อให้รู้ว่าอัปเดตแล้ว
+                existingCard.style.transition = "background-color 0.3s ease";
+                existingCard.style.backgroundColor = "#d4edda"; // สีเขียวอ่อน
+                setTimeout(() => {
+                    existingCard.style.backgroundColor = "white";
+                }, 500);
+            } else {
+                // ยังไม่มีการ์ด -> สร้างใหม่
+                const card = document.createElement("div");
+                card.className = "notification-card";
+                card.id = cardElementId;
+                card.innerHTML = cardInnerHtml;
+
+                containerDiv.prepend(card);
+            }
         });
 
         // 4. เริ่มการเชื่อมต่อ
