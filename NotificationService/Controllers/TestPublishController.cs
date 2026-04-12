@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using RabbitMQ.Client;
 using Google.Protobuf;
-using Cognibrew.Events; // เปลี่ยน Namespace ให้ตรงกับ Protobuf ของคุณ
+using Cognibrew.Events;
 
 namespace NotificationService.Controllers
 {
@@ -59,6 +59,7 @@ namespace NotificationService.Controllers
             var mockRecommendation = new Recommendation
             {
                 FaceId = faceIdMock,
+                Username = "Tester One"
             };
             mockRecommendation.RecommendedMenu.Add("Iced Americano");
             mockRecommendation.RecommendedMenu.Add("Matcha Latte");
@@ -73,9 +74,32 @@ namespace NotificationService.Controllers
                 body: menuBody
             );
 
+            // ==========================================
+            // 3. Publish Mock Data สำหรับ Member Info
+            // ==========================================
+            var mockMemberInfo = new MemberInfo
+            {
+                FaceId = faceIdMock,
+                FirstName = "Tester",
+                LastName = "One",
+                Rank = "Gold", // "Silver" "Gold" "Platinum"
+                Points = 1500, // คะแนนสะสมของสมาชิก
+                ImageBase64 = "<Base64ImageString>" // รูปภาพของสมาชิกในรูปแบบ Base64
+            };
+
+            var memberBody = mockMemberInfo.ToByteArray();
+            string memberExchange = _config["RabbitMQ:MemberExchange"] ?? "cognibrew.member";
+            string memberRoutingKey = _config["RabbitMQ:MemberRoutingKey"] ?? "member.memberInfo";
+
+            await channel.BasicPublishAsync(
+                exchange: memberExchange,
+                routingKey: memberRoutingKey,
+                body: memberBody
+            );
+
             return Ok(new
             {
-                Message = "Published mock messages successfully!",
+                Message = "Published mock messages successfully for Face, Recommendation, and Member!",
                 FaceId = faceIdMock
             });
         }
