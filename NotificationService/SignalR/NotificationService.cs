@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using NotificationService.Models;
 
 namespace NotificationService.SignalR
 {
@@ -11,17 +12,10 @@ namespace NotificationService.SignalR
             _hubContext = hubContext;
         }
 
-        public async Task SendSystemNotification(string faceId, double score, string username, List<string> recommendedMenu, string message)
+        public async Task SendSystemNotification(NotificationMessage notificationMessage)
         {
             // ส่งหาทุกคนผ่าน HubContext
-            await _hubContext.Clients.All.SendAsync("Notify", new
-            {
-                FaceId = faceId,
-                Score = score,
-                Username = username,
-                RecommendedMenu = recommendedMenu,
-                Message = message
-            });
+            await _hubContext.Clients.All.SendAsync("Notify", notificationMessage);
         }
     }
 }

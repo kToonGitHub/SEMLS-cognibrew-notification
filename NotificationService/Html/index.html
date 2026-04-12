@@ -33,16 +33,59 @@
             .notification-card h4 {
                 margin-top: 0;
                 color: #333;
+                border-bottom: 1px solid #eee;
+                padding-bottom: 10px;
             }
+
+        .greeting-text {
+            font-size: 1.1em;
+            color: #2c3e50;
+            font-weight: bold;
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #e8f4f8;
+            border-left: 4px solid #3498db;
+            border-radius: 4px;
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.9em;
+        }
 
         .tag {
             display: inline-block;
-            background-color: #007bff;
+            background-color: #6c757d;
             color: white;
             padding: 3px 8px;
             border-radius: 12px;
-            font-size: 12px;
+            font-size: 11px;
             margin-right: 5px;
+            margin-bottom: 5px;
+        }
+
+            .tag.guest {
+                background-color: #dc3545;
+            }
+
+            .tag.member {
+                background-color: #28a745;
+            }
+
+            .tag.warning {
+                background-color: #ffc107;
+                color: #333;
+            }
+
+        .customer-image {
+            max-width: 100px;
+            max-height: 100px;
+            border-radius: 8px;
+            object-fit: cover;
+            margin-bottom: 10px;
+            display: block;
         }
     </style>
 </head>
@@ -56,9 +99,9 @@
 
     <script>
         // ==========================================
-        // 1. ตั้งค่า URL ของ Hub (สำคัญ: ต้องเปลี่ยนให้ตรงกับ Backend ของคุณ)
+        // 1. ตั้งค่า URL ของ Hub
         // ==========================================
-        const hubUrl = "http://localhost:32770/chatHub"; // เปลี่ยนเป็น URL และ Route ของคุณ เช่น https://localhost:32772/chatHub
+        const hubUrl = "http://localhost:32770/chatHub";
 
         const statusDiv = document.getElementById("connection-status");
         const containerDiv = document.getElementById("notifications-container");
@@ -67,35 +110,72 @@
         // 2. สร้าง Connection
         const connection = new signalR.HubConnectionBuilder()
             .withUrl(hubUrl, {
-                accessTokenFactory: () => token // ใช้ JWT Token สำหรับ Authentication
+                accessTokenFactory: () => token
             })
-            .withAutomaticReconnect() // พยายามเชื่อมต่อใหม่หากหลุด
+            .withAutomaticReconnect()
             .build();
 
         // 3. ดักจับ Event "Notify" จาก Backend
-        connection.on("Notify", (data) => {
-            console.log("Received Notification: ", data);
+        connection.on("Notify", (payload) => {
+            console.log("Received Notification: ", payload);
+
+            // ดึง object customer ออกมาจาก payload
+            const data = payload.customer;
+            if (!data) {
+                console.warn("Payload does not contain 'customer' object.");
+                return;
+            }
 
             // สร้าง Card เพื่อแสดงข้อมูล
             const card = document.createElement("div");
             card.className = "notification-card";
 
-            // จัดการ RecommendedMenu ให้กลายเป็น Label
-            let menuHtml = "";
-            if (data.recommendedMenu && data.recommendedMenu.length > 0) {
-                menuHtml = data.recommendedMenu.map(menu => `<span class="tag">${menu}</span>`).join("");
-            } else {
-                menuHtml = "<em>ไม่มีเมนูแนะนำ</em>";
-            }
+            // จัดการ Tags (สถานะ Guest, Recommendation Down)
+            const isGuestTag = data.isGuest
+                ? `<span class="tag guest">Guest</span>`
+                : `<span class="tag member">Member</span>`;
+
+            const recDownTag = data.isRecommendationDown
+                ? `<span class="tag warning">Rec Service Down</span>`
+                : ``;
+
+            // จัดการรูปภาพ (ถ้าระบบส่งเป็น base64 มาให้)
+            const imageHtml = data.image
+                ? `<img class="customer-image" src="data:image/jpeg;base64,${data.image}" alt="Customer Image">`
+                : ``;
+
+            // ตกแต่งส่วน Greeting
+            const greetingHtml = data.greeting
+                ? `<div class="greeting-text">💬 "${data.greeting}"</div>`
+                : ``;
 
             // ใส่เนื้อหาลงใน Card
             card.innerHTML = `
-                    <h4>User: ${data.username || 'Unknown'}</h4>
-                    <p><strong>FaceId:</strong> ${data.faceId}</p>
-                    <p><strong>Score:</strong> ${data.score}</p>
-                    <p><strong>Message:</strong> ${data.message}</p>
-                    <p><strong>Recommended Menu:</strong> ${menuHtml}</p>
-                    <hr style="border:0; border-top:1px solid #eee;">
+                    <h4>ID (FaceId): ${data.id || 'N/A'}</h4>
+                    ${imageHtml}
+                    ${greetingHtml}
+
+                    <div>${isGuestTag} ${recDownTag}</div>
+                    <br/>
+
+                    <div class="data-grid">
+                        <div>
+                            <strong>User Details:</strong>
+                            <p style="margin: 5px 0;">Name: ${data.name || '-'} / ${data.firstName || '-'}</p>
+                            <p style="margin: 5px 0;">Rank: ${data.rank || '-'}</p>
+                            <p style="margin: 5px 0;">Points: ${data.points !== null ? data.points : '-'}</p>
+                            <p style="margin: 5px 0;">Status: ${data.status || '-'}</p>
+                        </div>
+                        <div>
+                            <strong>Order Details:</strong>
+                            <p style="margin: 5px 0;">Usual Order: ${data.usualOrder || '-'} ${data.usualOrderIcon || ''}</p>
+                            <p style="margin: 5px 0;">Usual Sweetness: ${data.usualSweetness || '-'}</p>
+                            <p style="margin: 5px 0;">Upsell: ${data.upsell || '-'}</p>
+                            <p style="margin: 5px 0;">Order ID: ${data.orderId || '-'}</p>
+                        </div>
+                    </div>
+
+                    <hr style="border:0; border-top:1px solid #eee; margin-top: 15px;">
                     <small style="color:gray;">Received at: ${new Date().toLocaleTimeString()}</small>
                 `;
 

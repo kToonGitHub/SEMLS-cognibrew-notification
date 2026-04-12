@@ -23,6 +23,7 @@
     <PackageReference Include="RabbitMQ.Client" Version="7.2.1" />
 	<Protobuf Include="Protos\recommendation.proto" GrpcServices="None" />
 	<Protobuf Include="Protos\face_result.proto" GrpcServices="None" />
+	  <Protobuf Include="Protos\member_info.proto" GrpcServices="None" />
   </ItemGroup>
 
 </Project>

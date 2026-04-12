@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option csharp_namespace = "Cognibrew.Events";
+
+message MemberInfo {
+  string first_name = 1;
+  string last_name = 2;
+  string rank = 3; // "Silver" "Gold" "Platinum"
+  int32 points = 4; // คะแนนสะสมของสมาชิก
+  string image_base64 = 5; // รูปภาพของสมาชิกในรูปแบบ Base64
+  string face_id = 6; // ส่ง face_id ที่ได้รับจาก face.recognized มาด้วย
+}

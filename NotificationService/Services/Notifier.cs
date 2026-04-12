@@ -16,6 +16,7 @@ namespace NotificationService.Services
         private IConnection? _connection; 
         private IChannel? _channelFaceResult;
         private IChannel? _channelRecommendedMenu;
+        private IChannel? _channelMemberInfo;
         private readonly NotificationService.SignalR.NotificationService _notificationService;
 
         public Notifier(
@@ -45,9 +46,11 @@ namespace NotificationService.Services
                 _connection = await factory.CreateConnectionAsync(stoppingToken);
                 _channelFaceResult = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
                 _channelRecommendedMenu = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
+                _channelMemberInfo = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
 
                 string faceQueueName = await ConnectFaceResult(_channelFaceResult, stoppingToken);
                 string menuQueueName = await ConnectRecommendedMenu(_channelRecommendedMenu, stoppingToken);
+                string memberQueueName = await ConnectMemberInfo(_channelMemberInfo, stoppingToken);
 
                 // ==========================================
                 // Consumer 1: สำหรับ Face Result
@@ -93,6 +96,28 @@ namespace NotificationService.Services
                 await _channelRecommendedMenu.BasicConsumeAsync(queue: menuQueueName, autoAck: false, consumer: menuConsumer, cancellationToken: stoppingToken);
                 _logger.LogInformation($"[*] Subscribed to Recommended Menu queue: {menuQueueName}");
 
+                // ==========================================
+                // Consumer 3: สำหรับ Member Info
+                // ==========================================
+                var memberConsumer = new AsyncEventingBasicConsumer(_channelMemberInfo);
+                memberConsumer.ReceivedAsync += async (model, ea) =>
+                {
+                    try
+                    {
+                        var body = ea.Body.ToArray();
+                        MemberInfo memberInfo = await ProcessMemberInfoMessageAsync(body); // ทำ Logic ของ Member Info
+                        await _channelMemberInfo.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
+                        await ReadAndNotify(memberInfo.FaceId); // อ่านข้อมูลจาก MongoDB และส่ง Notification ผ่าน SignalR
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing Member Info message.");
+                        // await _channelMemberInfo.BasicNackAsync(ea.DeliveryTag, false, true);
+                    }
+                };
+                await _channelMemberInfo.BasicConsumeAsync(queue: memberQueueName, autoAck: false, consumer: memberConsumer, cancellationToken: stoppingToken);
+                _logger.LogInformation($"[*] Subscribed to Member Info queue: {memberQueueName}");
+
                 // รอจนกว่า Service จะถูกสั่งหยุด
                 await Task.Delay(Timeout.Infinite, stoppingToken);
             }
@@ -102,6 +127,21 @@ namespace NotificationService.Services
             }
         }
 
+        private async Task ReadAndNotify(string faceId)
+        {
+            var filter = Builders<NotificationDocument>.Filter.Eq(x => x.FaceId, faceId);
+            var document = await _collection.Find(filter).FirstOrDefaultAsync();
+            if (document != null)
+            {
+                // map data
+                NotificationMessage notificationMessage = Utilities.Utilities.MapData(document);
+                // ส่ง Notification ผ่าน SignalR
+                await _notificationService.SendSystemNotification(notificationMessage);
+            }
+        }
+
+
+        #region Connect to RabbitMQ
         private async Task<string> ConnectFaceResult(IChannel channel, CancellationToken stoppingToken)
         {
             if (channel is null)
@@ -246,6 +286,81 @@ namespace NotificationService.Services
             return queueName;
         }
 
+        private async Task<string> ConnectMemberInfo(IChannel channel, CancellationToken stoppingToken)
+        {
+            if (channel is null)
+            {
+                _logger.LogError("RabbitMQ channel is not initialized.");
+                return string.Empty;
+            }
+
+            string queueName = "cognibrew.member.notification_service";
+            if (!string.IsNullOrEmpty(_config["RabbitMQ:MemberQueue"]))
+            {
+                queueName = _config["RabbitMQ:MemberQueue"]!;
+                _logger.LogInformation($"[*] Using queue name from config: {queueName}");
+            }
+            else
+            {
+                _logger.LogInformation($"[*] Using default queue name: {queueName}");
+            }
+
+            await channel.QueueDeclareAsync(
+                queue: queueName,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                cancellationToken: stoppingToken
+            );
+            _logger.LogInformation($"[*] Connected to RabbitMQ and declared queue: {queueName}");
+
+            string exchangeName = "cognibrew.member";
+            if (!string.IsNullOrEmpty(_config["RabbitMQ:MemberExchange"]))
+            {
+                exchangeName = _config["RabbitMQ:MemberExchange"]!;
+                _logger.LogInformation($"[*] Using exchange from config: {exchangeName}");
+            }
+            else
+            {
+                _logger.LogInformation($"[*] Using default exchange: {exchangeName}");
+            }
+            // ==========================================
+            // เพิ่มการประกาศ (Declare) Exchange
+            // ==========================================
+            await channel.ExchangeDeclareAsync(
+                exchange: exchangeName,
+                type: ExchangeType.Topic,
+                durable: true,
+                autoDelete: false,
+                arguments: null,
+                cancellationToken: stoppingToken
+            );
+            _logger.LogInformation($"[*] Declared exchange: {exchangeName}");
+
+            string routingKey = "member.memberInfo";
+            if (!string.IsNullOrEmpty(_config["RabbitMQ:MemberRoutingKey"]))
+            {
+                routingKey = _config["RabbitMQ:MemberRoutingKey"]!;
+                _logger.LogInformation($"[*] Using routing key from config: {routingKey}");
+            }
+            else
+            {
+                _logger.LogInformation($"[*] Using default routing key: {routingKey}");
+            }
+
+            await channel.QueueBindAsync(
+                queue: queueName,
+                exchange: exchangeName,
+                routingKey: routingKey,
+                cancellationToken: stoppingToken
+            );
+            _logger.LogInformation($"[*] Bound queue '{queueName}' to exchange '{exchangeName}' with routing key '{routingKey}'");
+            return queueName;
+        }
+        #endregion Connect to RabbitMQ
+
+
+        #region ProcessMessageAsync
         public async Task<Recommendation> ProcessRecommendedMenuMessageAsync(byte[] body)
         {
             Recommendation recommendationResult = Recommendation.Parser.ParseFrom(body);
@@ -260,11 +375,21 @@ namespace NotificationService.Services
             return faceResult;
         }
 
+        public async Task<MemberInfo> ProcessMemberInfoMessageAsync(byte[] body)
+        {
+            MemberInfo memberInfo = MemberInfo.Parser.ParseFrom(body);
+            await SaveToMongoAsync(memberInfo);
+            return memberInfo;
+        }
+        #endregion ProcessMessageAsync
+
+
+        #region SaveToMongoAsync
         private async Task SaveToMongoAsync(Recommendation recommendationResult)
         {
             if (string.IsNullOrEmpty(recommendationResult.FaceId))
             {
-                _logger.LogWarning("Received recommendation result with null FaceId. Skipping MongoDB save.");
+                _logger.LogWarning("[Recommendation] Received recommendation result with null FaceId. Skipping MongoDB save.");
                 return;
             }
             string faceId = recommendationResult.FaceId;
@@ -288,7 +413,7 @@ namespace NotificationService.Services
         {
             if (string.IsNullOrEmpty(faceResult.FaceId))
             {
-                _logger.LogWarning("Received face result with null FaceId. Skipping MongoDB save.");
+                _logger.LogWarning("[FaceResult] Received face result with null FaceId. Skipping MongoDB save.");
                 return;
             }
             string faceId = faceResult.FaceId;
@@ -309,22 +434,35 @@ namespace NotificationService.Services
             await _collection.UpdateOneAsync(filter, update, options);
         }
 
-        private async Task ReadAndNotify(string faceId)
+        private async Task SaveToMongoAsync(MemberInfo memberInfo)
         {
-            var filter = Builders<NotificationDocument>.Filter.Eq(x => x.FaceId, faceId);
-            var document = await _collection.Find(filter).FirstOrDefaultAsync();
-            if (document != null)
+            if (string.IsNullOrEmpty(memberInfo.FaceId))
             {
-                // ส่ง Notification ผ่าน SignalR
-                await _notificationService.SendSystemNotification(
-                    document.FaceId,
-                    document.Score,
-                    document.Username,
-                    document.RecommendedMenu,
-                    $"User {document.Username} has score {document.Score} and recommended menu: {string.Join(", ", document.RecommendedMenu)}"
-                );
+                _logger.LogWarning("[MemberInfo] Received member info with null FaceId. Skipping MongoDB save.");
+                return;
             }
+            string faceId = memberInfo.FaceId;
+            string currentDate = DateTime.Now.ToString("yyyy-MM-dd"); // ใช้วันที่ปัจจุบัน
+
+            // ค้นหา Document ของเครื่องนี้ ในวันที่นี้
+            var filter = Builders<NotificationDocument>.Filter.Eq(x => x.FaceId, faceId);
+
+            // คำสั่งอัปเดต: ถ้าไม่เจอให้สร้าง Document ใหม่ (Upsert)
+            var update = Builders<NotificationDocument>.Update
+                .SetOnInsert(x => x.Id, ObjectId.GenerateNewId().ToString())
+                .SetOnInsert(x => x.Date, currentDate) // กำหนดวันที่ตอนสร้างใหม่
+                .Set(x => x.FirstName, memberInfo.FirstName)
+                .Set(x => x.LastName, memberInfo.LastName)
+                .Set(x => x.Rank, memberInfo.Rank)
+                .Set(x => x.Points, memberInfo.Points)
+                .Set(x => x.ImageBase64, memberInfo.ImageBase64);
+
+            var options = new UpdateOptions { IsUpsert = true };
+
+            await _collection.UpdateOneAsync(filter, update, options);
         }
+        #endregion #region SaveToMongoAsync
+
 
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
