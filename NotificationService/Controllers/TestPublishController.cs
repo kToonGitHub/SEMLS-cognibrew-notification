@@ -2,6 +2,7 @@
 using RabbitMQ.Client;
 using Google.Protobuf;
 using Cognibrew.Events;
+using Microsoft.AspNetCore.Connections.Features;
 
 namespace NotificationService.Controllers
 {
@@ -17,9 +18,16 @@ namespace NotificationService.Controllers
             _config = config;
         }
 
+        // เพิ่มพารามิเตอร์ [FromQuery] string username เพื่อรับค่าจาก URL
         [HttpPost("publish-mock")]
-        public async Task<IActionResult> PublishMockData()
+        public async Task<IActionResult> PublishMockData([FromQuery] string username, [FromQuery] bool mock_member_info = true, [FromQuery] bool mock_recommendation = true, [FromQuery] bool mock_recognition = true)
         {
+            // ตรวจสอบว่ามีการส่ง username มาหรือไม่
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return BadRequest(new { Message = "Username is required." });
+            }
+
             var factory = new ConnectionFactory
             {
                 HostName = _config["RabbitMQ:HostName"] ?? "localhost",
@@ -35,72 +43,82 @@ namespace NotificationService.Controllers
             // ==========================================
             // 1. Publish Mock Data สำหรับ Face Result
             // ==========================================
-            var mockFaceResult = new FaceResult
+            if (mock_recognition)
             {
-                FaceId = faceIdMock,
-                Username = "Tester One",
-                Score = 0.98f
-            };
-            mockFaceResult.Embedding.AddRange(new float[] { 0, 0.2f, 0.1f, 0.7f, 0.02f }); // เพิ่มข้อมูล Embedding
+                var mockFaceResult = new FaceResult
+                {
+                    FaceId = faceIdMock,
+                    Username = username, // แทนที่ Hardcode ด้วยตัวแปร username
+                    Score = 0.98f
+                };
+                mockFaceResult.Embedding.AddRange(new float[] { 0, 0.2f, 0.1f, 0.7f, 0.02f });
 
-            var faceBody = mockFaceResult.ToByteArray();
-            string faceExchange = _config["RabbitMQ:FaceResultExchange"] ?? "cognibrew.inference";
-            string faceRoutingKey = _config["RabbitMQ:FaceResultRoutingKey"] ?? "face.recognized";
+                var faceBody = mockFaceResult.ToByteArray();
+                string faceExchange = _config["RabbitMQ:FaceResultExchange"] ?? "cognibrew.inference";
+                string faceRoutingKey = _config["RabbitMQ:FaceResultRoutingKey"] ?? "face.recognized";
 
-            await channel.BasicPublishAsync(
-                exchange: faceExchange,
-                routingKey: faceRoutingKey,
-                body: faceBody
-            );
+                await channel.BasicPublishAsync(
+                    exchange: faceExchange,
+                    routingKey: faceRoutingKey,
+                    body: faceBody
+                );
+            }
 
             // ==========================================
             // 2. Publish Mock Data สำหรับ Recommended Menu
             // ==========================================
-            var mockRecommendation = new Recommendation
+            if (mock_recommendation)
             {
-                FaceId = faceIdMock,
-                Username = "Tester One"
-            };
-            mockRecommendation.RecommendedMenu.Add("Iced Americano");
-            mockRecommendation.RecommendedMenu.Add("Matcha Latte");
+                var mockRecommendation = new Recommendation
+                {
+                    FaceId = faceIdMock,
+                    Username = username // แทนที่ Hardcode ด้วยตัวแปร username
+                };
+                mockRecommendation.RecommendedMenu.Add("Iced Americano");
+                mockRecommendation.RecommendedMenu.Add("Matcha Latte");
 
-            var menuBody = mockRecommendation.ToByteArray();
-            string menuExchange = _config["RabbitMQ:RecommendationExchange"] ?? "cognibrew.recommendation";
-            string menuRoutingKey = _config["RabbitMQ:RecommendationRoutingKey"] ?? "menu.recommended";
+                var menuBody = mockRecommendation.ToByteArray();
+                string menuExchange = _config["RabbitMQ:RecommendationExchange"] ?? "cognibrew.recommendation";
+                string menuRoutingKey = _config["RabbitMQ:RecommendationRoutingKey"] ?? "menu.recommended";
 
-            await channel.BasicPublishAsync(
-                exchange: menuExchange,
-                routingKey: menuRoutingKey,
-                body: menuBody
-            );
+                await channel.BasicPublishAsync(
+                    exchange: menuExchange,
+                    routingKey: menuRoutingKey,
+                    body: menuBody
+                );
+            }
 
             // ==========================================
             // 3. Publish Mock Data สำหรับ Member Info
             // ==========================================
-            var mockMemberInfo = new MemberInfo
+            if (mock_member_info)
             {
-                FaceId = faceIdMock,
-                FirstName = "Tester",
-                LastName = "One",
-                Rank = "Gold", // "Silver" "Gold" "Platinum"
-                Points = 1500, // คะแนนสะสมของสมาชิก
-                ImageBase64 = "<Base64ImageString>" // รูปภาพของสมาชิกในรูปแบบ Base64
-            };
+                var mockMemberInfo = new MemberInfo
+                {
+                    FaceId = faceIdMock,
+                    FirstName = username, // นำ username มาใช้แทน FirstName ชั่วคราวเพื่อให้เห็นความเปลี่ยนแปลง
+                    LastName = "Mock",
+                    Rank = "Gold",
+                    Points = 1500,
+                    ImageBase64 = "<Base64ImageString>"
+                };
 
-            var memberBody = mockMemberInfo.ToByteArray();
-            string memberExchange = _config["RabbitMQ:MemberExchange"] ?? "cognibrew.member";
-            string memberRoutingKey = _config["RabbitMQ:MemberRoutingKey"] ?? "member.memberInfo";
+                var memberBody = mockMemberInfo.ToByteArray();
+                string memberExchange = _config["RabbitMQ:MemberExchange"] ?? "cognibrew.member";
+                string memberRoutingKey = _config["RabbitMQ:MemberRoutingKey"] ?? "member.memberInfo";
 
-            await channel.BasicPublishAsync(
-                exchange: memberExchange,
-                routingKey: memberRoutingKey,
-                body: memberBody
-            );
+                await channel.BasicPublishAsync(
+                    exchange: memberExchange,
+                    routingKey: memberRoutingKey,
+                    body: memberBody
+                );
+            }
 
             return Ok(new
             {
-                Message = "Published mock messages successfully for Face, Recommendation, and Member!",
-                FaceId = faceIdMock
+                Message = $"Published mock messages successfully for Face, Recommendation, and Member!",
+                FaceId = faceIdMock,
+                Username = username // คืนค่า username กลับไปเพื่อยืนยัน
             });
         }
     }

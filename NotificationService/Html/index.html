@@ -101,11 +101,11 @@
         // ==========================================
         // 1. ตั้งค่า URL ของ Hub
         // ==========================================
-        const hubUrl = "http://localhost:32770/chatHub";
+        const hubUrl = "http://localhost:5000/chatHub";
 
         const statusDiv = document.getElementById("connection-status");
         const containerDiv = document.getElementById("notifications-container");
-        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJfaFRPTHV1bk1QS29SYjlUV3NMUGV3IiwiaWF0IjoxNzc1Nzk5NTI4LCJuYmYiOjE3NzU3OTk1MjgsImV4cCI6MTc3NTgwNjcyOCwicm9sZSI6Ik93bmVyIiwiaXNzIjoic2VtbHMtYXBwLWdyb3VwIiwiYXVkIjoic2VtbHMtYXBwLWF1ZGllbmNlIn0.SCBDYuBHPy4sOpy84GZfLHFEbjaVVEllDTOx1mT6Nbg";
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJOb0prUy1VT0t2S2Q0V25ndGx1OWpBIiwiaWF0IjoxNzc1OTgyNzUzLCJuYmYiOjE3NzU5ODI3NTMsImV4cCI6MTc3NTk4OTk1Mywicm9sZSI6Ik93bmVyIiwiaXNzIjoic2VtbHMtYXBwLWdyb3VwIiwiYXVkIjoic2VtbHMtYXBwLWF1ZGllbmNlIn0.ymRleA4b6UevlsAd3Ec5mF75OD8Wk9VG7-N7c6NiUoU";
 
         // 2. สร้าง Connection
         const connection = new signalR.HubConnectionBuilder()

@@ -1,0 +1,75 @@
+services:
+  notification-service:
+    build:
+      context: . # ให้ Docker มองโฟลเดอร์นอกสุดเป็นจุดเริ่มต้น
+      dockerfile: notificationService/Dockerfile # ชี้เป้าไปที่ไฟล์ Dockerfile ในโฟลเดอร์ย่อย
+    container_name: notification-service
+    restart: unless-stopped
+    ports:
+      - "5000:8080" # ผูกพอร์ต 5000 ของเครื่องโฮสต์ เข้ากับพอร์ต 8080 ของ .NET
+      - "5001:8081"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      
+      # ชี้ไปที่ MongoDB Container
+      - ConnectionStrings__MongoDb=mongodb://root:example@notification-mongodb:27017
+      
+      # ชี้ไปที่ RabbitMQ Container
+      - RabbitMQ__HostName=cognibrew-rabbitmq
+      - RabbitMQ__UserName=guest
+      - RabbitMQ__Password=guest
+      
+      # ตั้งค่าระบบ
+      - RabbitMQ__RecommendationQueue=cognibrew.recommendation.notification_service
+      - RabbitMQ__RecommendationExchange=cognibrew.recommendation
+      - RabbitMQ__RecommendationRoutingKey=menu.recommended
+      - RabbitMQ__FaceResultQueue=cognibrew.inference.face_embeded.feedback_service
+      - RabbitMQ__FaceResultExchange=cognibrew.inference
+      - RabbitMQ__FaceResultRoutingKey=face.recognized
+      - RabbitMQ__MemberQueue=cognibrew.member.notification_service
+      - RabbitMQ__MemberExchange=cognibrew.member
+      - RabbitMQ__MemberRoutingKey=member.memberInfo
+    depends_on:
+      - notification-mongodb
+    networks:
+      - cognibrew
+
+  notification-mongodb:
+    image: mongo:latest
+    container_name: notification-mongodb
+    restart: always
+    environment:
+      # ตั้งค่า Username/Password เบื้องต้น (ถ้าไม่ใส่จะเป็น No Auth)
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=example
+    ports:
+      - "28017:27017"
+    volumes:
+      - notification_mongo_data:/data/db
+    networks:
+      - cognibrew
+
+  # (Optional) ตัวช่วยจัดการ Database ผ่านหน้าเว็บ เข้าใช้งานที่ http://localhost:8081
+  notification-mongo-express:
+    image: mongo-express
+    container_name: notification-mongo-express
+    restart: always
+    ports:
+      - "8017:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=root
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=example
+      - ME_CONFIG_MONGODB_URL=mongodb://root:example@notification-mongodb:27017/
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=pass
+    depends_on:
+      - notification-mongodb
+    networks:
+      - cognibrew
+
+volumes:
+  notification_mongo_data:
+
+networks:
+  cognibrew:
+    external: true

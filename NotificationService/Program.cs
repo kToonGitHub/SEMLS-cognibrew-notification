@@ -39,9 +39,9 @@ namespace NotificationService
             // ตั้งค่า MongoDB
             var mongoClient = new MongoClient(builder.Configuration.GetConnectionString("MongoDb"));
             var database = mongoClient.GetDatabase("CognibrewDb");
-            var feedbackCollection = database.GetCollection<NotificationDocument>("Notification");
+            var notificationCollection = database.GetCollection<NotificationDocument>("Notification");
 
-            builder.Services.AddSingleton(feedbackCollection);
+            builder.Services.AddSingleton(notificationCollection);
             builder.Services.AddHostedService<Services.Notifier>();
 
             var app = builder.Build();
@@ -97,7 +97,7 @@ namespace NotificationService
 
         private static void SetSwaggerOptions(SwaggerGenOptions options)
         {
-            options.SwaggerDoc("v1", new() { Title = "ReservationService API", Version = "v1" });
+            options.SwaggerDoc("v1", new() { Title = "NotificationService API", Version = "v1" });
             options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
             {
                 Name = "Authorization",

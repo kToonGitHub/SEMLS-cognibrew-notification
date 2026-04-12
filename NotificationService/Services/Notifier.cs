@@ -5,6 +5,7 @@ using MongoDB.Driver;
 using NotificationService.Models;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using System.Threading.Channels;
 
 namespace NotificationService.Services
 {
@@ -68,7 +69,7 @@ namespace NotificationService.Services
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error processing Face Result message.");
-                        // await _channelFaceResult.BasicNackAsync(ea.DeliveryTag, false, true);
+                        await _channelFaceResult.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
                     }
                 };
                 await _channelFaceResult.BasicConsumeAsync(queue: faceQueueName, autoAck: false, consumer: faceConsumer, cancellationToken: stoppingToken);
@@ -90,7 +91,7 @@ namespace NotificationService.Services
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error processing Recommended Menu message.");
-                        // await _channelRecommendedMenu.BasicNackAsync(ea.DeliveryTag, false, true);
+                        await _channelRecommendedMenu.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
                     }
                 };
                 await _channelRecommendedMenu.BasicConsumeAsync(queue: menuQueueName, autoAck: false, consumer: menuConsumer, cancellationToken: stoppingToken);
@@ -112,7 +113,7 @@ namespace NotificationService.Services
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error processing Member Info message.");
-                        // await _channelMemberInfo.BasicNackAsync(ea.DeliveryTag, false, true);
+                        await _channelMemberInfo.BasicNackAsync(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
                     }
                 };
                 await _channelMemberInfo.BasicConsumeAsync(queue: memberQueueName, autoAck: false, consumer: memberConsumer, cancellationToken: stoppingToken);
